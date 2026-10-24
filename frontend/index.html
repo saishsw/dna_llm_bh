@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A DNA strand-displacement language model you can tune live: pipetting error, leak, concentration resolution and the seesaw gate, scored on perplexity and joules per token.">
+<title>DNA LM Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+/* Layout: a lab bench. Tube recipe (controls) on the left, instrument readouts on the right,
+   a live readout strip across the top. Cool slide-glass neutrals, one fluorescence-cyan accent. */
+:root {
+  --paper: #eef2f4;
+  --panel: #fbfcfd;
+  --ink: #13202a;
+  --ink-2: #44545f;
+  --muted: #7a8892;
+  --rule: #d5dde2;
+  --accent: #0b6f7f;
+  --accent-soft: #d3ecef;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --good: #2f7d32; --warn: #a45a00; --bad: #c0362c;
+  --good-bg: #e3f1e3; --bad-bg: #f8e2df; --warn-bg: #f7ead6;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0d1418; --panel: #141d23; --ink: #e5ecef; --ink-2: #b2bec5; --muted: #7f8d95;
+    --rule: #26333b; --accent: #4cc3d3; --accent-soft: #12343a;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --good: #6cc070; --warn: #e0a040; --bad: #ef7a6f;
+    --good-bg: #16301a; --bad-bg: #3a1a17; --warn-bg: #36280f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0d1418; --panel: #141d23; --ink: #e5ecef; --ink-2: #b2bec5; --muted: #7f8d95;
+  --rule: #26333b; --accent: #4cc3d3; --accent-soft: #12343a;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --good: #6cc070; --warn: #e0a040; --bad: #ef7a6f;
+  --good-bg: #16301a; --bad-bg: #3a1a17; --warn-bg: #36280f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font: 15px/1.5 var(--f-body); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 50px); font-weight: 760; font-stretch: 78%; letter-spacing: -0.01em; line-height: 1.02; }
+h2 { font-size: 19px; font-weight: 700; font-stretch: 88%; }
+h3 { font-size: 12px; font-weight: 650; font-stretch: 100%; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-2); }
+p { margin: 0; }
+.mono, .num { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+.eyebrow { font-family: var(--f-data); font-size: 12px; color: var(--accent); letter-spacing: 0.04em; }
+.lede { color: var(--ink-2); max-width: 66ch; font-size: 16px; }
+header { display: grid; gap: 12px; margin-bottom: 22px; }
+
+/* readout strip */
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; border: 1px solid var(--rule); background: var(--rule); border-radius: 6px; overflow: hidden; }
+.cell { padding: 14px 16px; display: grid; gap: 4px; align-content: start; min-width: 0; background: var(--panel); }
+.cell .label { font-size: 12px; color: var(--ink-2); }
+.cell .big { font-family: var(--f-data); font-size: 28px; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cell .big.hero { font-size: 40px; color: var(--accent); }
+.cell .sub { font-size: 12px; color: var(--muted); }
+.k { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: 0; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; width: fit-content; }
+.pill.good { color: var(--good); background: var(--good-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); }
+sup { font-size: 0.62em; vertical-align: 0.55em; line-height: 0; }
+
+/* bench */
+.bench { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; margin-top: 20px; align-items: start; }
+.recipe { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: grid; gap: 18px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow-y: auto; }
+.group { display: grid; gap: 10px; }
+.group + .group { border-top: 1px solid var(--rule); padding-top: 14px; }
+.ctl { display: grid; gap: 4px; }
+.ctl .row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.ctl .row .v { font-family: var(--f-data); color: var(--ink); font-variant-numeric: tabular-nums; }
+.ctl .hint { font-size: 11.5px; color: var(--muted); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select, input[type=text], input[type=number] { font: 13px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 5px 8px; width: 100%; }
+.seg { display: flex; border: 1px solid var(--rule); border-radius: 5px; overflow: hidden; }
+.seg button { flex: 1; font: 500 12.5px var(--f-data); background: transparent; color: var(--ink-2); border: 0; padding: 6px 4px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed=true] { background: var(--accent); color: var(--panel); }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { font: 500 12.5px var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600; border-radius: 5px; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+
+.readouts { display: grid; gap: 20px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 16px 12px; display: grid; gap: 10px; min-width: 0; }
+.card .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.card .note { font-size: 12.5px; color: var(--ink-2); max-width: 75ch; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: var(--f-data); font-size: 10.5px; fill: var(--ink-2); }
+.axis line, .axis path { stroke: var(--muted); }
+.gridline { stroke: var(--rule); stroke-width: 1; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; }
+
+.bars { display: grid; gap: 7px; }
+.bar { display: grid; grid-template-columns: 150px minmax(0,1fr) 64px; gap: 10px; align-items: center; font-size: 13px; }
+.bar .track { height: 12px; background: var(--paper); border-radius: 3px; position: relative; overflow: hidden; }
+.bar .fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 0 3px 3px 0; }
+.bar.total .fill { background: var(--ink-2); }
+.bar .val { text-align: right; font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+
+.gen { display: grid; gap: 10px; }
+.gen .controls { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.gen output { display: block; font: 14px/1.6 var(--f-data); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; min-height: 5.4em; }
+.gen output b { font-weight: 500; color: var(--muted); }
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--paper); font: 11.5px/1.4 var(--f-data); padding: 6px 8px; border-radius: 4px; z-index: 20; max-width: 260px; }
+.limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 24px; font-size: 13px; color: var(--ink-2); }
+.limits strong { color: var(--ink); font-weight: 600; }
+footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
+
+/* start here: primer + guided tour */
+.start { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; margin-bottom: 20px; }
+.start > summary { list-style: none; cursor: pointer; padding: 14px 16px; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.start > summary::-webkit-details-marker { display: none; }
+.start > summary .hint { font-size: 12.5px; color: var(--accent); }
+.start[open] > summary .hint .open-label, .start:not([open]) > summary .hint .close-label { display: none; }
+.start-body { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 28px; padding: 4px 16px 18px; }
+.primer { display: grid; gap: 12px; align-content: start; }
+.primer p { font-size: 14px; color: var(--ink-2); max-width: 62ch; }
+.primer p strong { color: var(--ink); font-weight: 600; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font: 12px var(--f-data); }
+.flow span.node { background: var(--accent-soft); color: var(--ink); padding: 4px 8px; border-radius: 4px; }
+.flow span.arrow { color: var(--muted); }
+.tour { display: grid; gap: 8px; align-content: start; }
+.tour ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: step; }
+.tour li { counter-increment: step; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 5px; }
+.tour li::before { content: counter(step); font: 600 12px var(--f-data); color: var(--accent); width: 22px; height: 22px; border: 1.5px solid var(--accent); border-radius: 50%; display: grid; place-items: center; }
+.tour li.active { border-color: var(--accent); background: var(--accent-soft); }
+.tour li .t { font-weight: 600; font-size: 13.5px; }
+.tour li .d { grid-column: 2 / 4; font-size: 13px; color: var(--ink-2); }
+.tour li button { grid-column: 3; grid-row: 1; }
+.spot { outline: 2px solid var(--accent); outline-offset: 4px; transition: outline-color 1.2s ease-out; }
+
+/* info buttons + popover */
+.info { font: 600 10px/1 var(--f-data); width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--muted); color: var(--ink-2); background: transparent; cursor: pointer; padding: 0; margin-left: 6px; vertical-align: 1px; display: inline-grid; place-items: center; text-transform: none; letter-spacing: 0; }
+.info:hover, .info[aria-expanded=true] { border-color: var(--accent); color: var(--accent); }
+#pop { position: fixed; z-index: 30; max-width: min(340px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); border: 1px solid var(--accent); border-radius: 6px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.18); font-size: 13px; display: grid; gap: 6px; }
+#pop .term { font-family: var(--f-display); font-weight: 700; font-size: 15px; font-stretch: 90%; }
+#pop a { color: var(--accent); font-size: 12px; }
+
+/* key */
+.key { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px 28px; }
+.key section { display: grid; gap: 8px; align-content: start; }
+.key dl { margin: 0; display: grid; gap: 9px; }
+.key dt { font-weight: 600; font-size: 13.5px; }
+.key dd { margin: 0; font-size: 13px; color: var(--ink-2); }
+.key dt:target, .key dt.flash { color: var(--accent); }
+.symbols { display: grid; gap: 7px; font-size: 13px; color: var(--ink-2); }
+.symbols div { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; align-items: center; }
+.symbols svg { width: 30px; height: 16px; }
+
+@media (max-width: 900px) { .start-body { grid-template-columns: 1fr; } .bench { grid-template-columns: 1fr; } .recipe { position: static; } .two { grid-template-columns: 1fr; } }
+@media (max-width: 560px) {
+  .strip { grid-template-columns: 1fr 1fr; }
+  .cell:first-child { grid-column: span 2; }
+  .cell .big { font-size: 22px; }
+  .bar { grid-template-columns: 110px minmax(0,1fr) 56px; }
+  .gen .controls { grid-template-columns: 1fr 1fr; }
+  .gen .controls input { grid-column: span 2; }
+}
+@media (prefers-reduced-motion: no-preference) { .bar .fill { transition: width 180ms ease-out; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">BASES hackathon · simulation with literature constants · runs in your browser</span>
+    <h1>Run a language model in a test tube</h1>
+    <p class="lede">A character-level model trained on Shakespeare, executed as a DNA strand-displacement circuit. Set the tube recipe on the left: pipetting error, leak, concentration resolution, the seesaw gate. Perplexity, joules per token and strand count are recomputed live from the real trained weights.</p>
+  </header>
+
+  <details class="start" id="start" open>
+    <summary><h2>New to DNA computing? Start here</h2><span class="hint"><span class="close-label">Hide guide</span><span class="open-label">Show guide</span></span></summary>
+    <div class="start-body">
+      <div class="primer">
+        <h3>What is happening in the tube</h3>
+        <p><strong>The model.</strong> A small neural network that reads the last 6 letters of Shakespeare and guesses the next one. All it knows is 7,457 numbers, its weights.</p>
+        <p><strong>Weights become molecules.</strong> Each weight is a short DNA strand mixed into a tube. A bigger weight means more of that strand. The input letters are strands too.</p>
+        <p><strong>Chemistry does the math.</strong> Strands pair up and knock each other loose in a reaction called strand displacement. The amount of output strand that comes out equals the weighted sum a computer would calculate.</p>
+        <p><strong>Light reads the answer.</strong> Output strands carry fluorescent tags. A plate reader measures the glow, and the brightest output is the predicted letter.</p>
+        <div class="flow" aria-label="Signal path">
+          <span class="node">6 letters</span><span class="arrow">→</span><span class="node">input strands</span><span class="arrow">→</span><span class="node">weight gates</span><span class="arrow">→</span><span class="node">seesaw gates</span><span class="arrow">→</span><span class="node">output strands</span><span class="arrow">→</span><span class="node">plate reader</span><span class="arrow">→</span><span class="node">next letter</span>
+        </div>
+        <p>Real chemistry is imperfect: pipettes are off by a few percent, some reactions fire on their own, and fuel runs out. Every slider on this page is one of those imperfections. The <a href="#key" style="color:var(--accent)">key</a> at the bottom defines every term, and the <span class="info" aria-hidden="true">i</span> buttons beside the controls explain each one in place.</p>
+      </div>
+      <div class="tour">
+        <h3>Guided tour: eight things to try</h3>
+        <ol id="tour"></ol>
+      </div>
+    </div>
+  </details>
+
+  <section class="strip" aria-label="Live readout">
+    <div class="cell">
+      <span class="label">Perplexity, DNA substrate</span>
+      <span class="big hero" id="r-ppl">–</span>
+      <span class="sub" id="r-ppl-sub">–</span>
+    </div>
+    <div class="cell">
+      <span class="label"><i class="k" style="background:var(--s1)"></i>E<sub>chem</sub> / token</span>
+      <span class="big" id="r-chem">–</span>
+      <span class="sub" id="r-chem-sub">–</span>
+    </div>
+    <div class="cell">
+      <span class="label"><i class="k" style="background:var(--s2)"></i>E<sub>wall-plug</sub>, batch 1</span>
+      <span class="big" id="r-wall">–</span>
+      <span class="sub" id="r-wall-sub">–</span>
+    </div>
+    <div class="cell">
+      <span class="label"><i class="k" style="background:var(--s3)"></i>E<sub>amortised</sub> / token</span>
+      <span class="big" id="r-am">–</span>
+      <span class="sub" id="r-am-sub">–</span>
+    </div>
+    <div class="cell">
+      <span class="label">Distinct strands</span>
+      <span class="big" id="r-strands">–</span>
+      <span id="r-feas"></span>
+    </div>
+  </section>
+
+  <div class="bench">
+    <aside class="recipe" aria-label="Tube recipe">
+      <div class="group">
+        <h3>Presets</h3>
+        <div class="presets" id="presets"></div>
+      </div>
+
+      <div class="group">
+        <h3>Model</h3>
+        <div class="ctl">
+          <div class="row"><span>Hidden width</span><span class="v" id="v-width"></span></div>
+          <div class="seg" id="seg-width" role="group" aria-label="Hidden width"></div>
+        </div>
+        <div class="ctl">
+          <div class="row"><span>Trained on silicon with</span></div>
+          <div class="seg" id="seg-trained" role="group" aria-label="Training activation"></div>
+        </div>
+        <div class="ctl">
+          <div class="row"><span>Nonlinearity in the tube</span></div>
+          <div class="seg" id="seg-act" role="group" aria-label="Activation in the tube"></div>
+          <span class="hint">ReLU has no DNA implementation; it is here as the comparison.</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Substrate</h3>
+        <div class="ctl">
+          <div class="row"><label for="i-sigma">Pipetting error σ (log-normal)</label><span class="v" id="v-sigma"></span></div>
+          <input type="range" id="i-sigma" min="0" max="0.5" step="0.01">
+          <span class="hint">w · exp(N(0, σ)). Literature 0.05–0.15.</span>
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="i-leak">Leak rate</label><span class="v" id="v-leak"></span></div>
+          <input type="range" id="i-leak" min="-5.25" max="0" step="0.05">
+          <span class="hint">Fraction of gate concentration firing without a toehold. Literature 1e-3–1e-2. Far left is off.</span>
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="i-levels">Concentration levels per rail</label><span class="v" id="v-levels"></span></div>
+          <select id="i-levels">
+            <option value="">continuous</option><option>256</option><option>64</option><option>32</option><option>16</option><option>8</option><option>6</option><option>4</option><option>3</option><option>2</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Seesaw gate</h3>
+        <span class="hint mono">y = clamp(gain · (x − θ), 0, y<sub>max</sub>)</span>
+        <div class="ctl">
+          <div class="row"><label for="i-thr">Threshold θ</label><span class="v" id="v-thr"></span></div>
+          <input type="range" id="i-thr" min="0" max="0.3" step="0.005">
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="i-gain">Gain</label><span class="v" id="v-gain"></span></div>
+          <input type="range" id="i-gain" min="0.5" max="2" step="0.05">
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="i-ymax">y<sub>max</sub> (fuel-limited output)</label><span class="v" id="v-ymax"></span></div>
+          <input type="range" id="i-ymax" min="0.25" max="2" step="0.05">
+          <span class="hint">Units of full-scale concentration; models are calibrated so 1.0 sits at the 99.9th percentile.</span>
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="i-fuel">Fuel budget per neuron</label><span class="v" id="v-fuel"></span></div>
+          <input type="range" id="i-fuel" min="2" max="5.25" step="0.05">
+          <span class="hint">One tube reused over the 20k-character stream. Far right is unlimited.</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Deployment</h3>
+        <div class="ctl">
+          <div class="row"><span>Circuit layout</span></div>
+          <div class="seg" id="seg-arch" role="group" aria-label="Circuit layout"></div>
+          <span class="hint">Bulk: 3600 s per layer, diffusion limited. Origami: 60 s per layer (Chatterjee 2017).</span>
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="i-copies">Copies per inference</label><span class="v" id="v-copies"></span></div>
+          <input type="range" id="i-copies" min="0" max="6" step="0.1">
+          <span class="hint">Molecules of each species one inference uses. 1 is the ideal limit; analog concentrations need more to beat shot noise.</span>
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="i-domains">Orthogonal domain library</label><span class="v" id="v-domains"></span></div>
+          <input type="range" id="i-domains" min="3" max="4.5" step="0.05">
+        </div>
+      </div>
+
+      <div class="group">
+        <h3>Preparation</h3>
+        <div class="ctl">
+          <div class="row"><span>Pipetting draw</span><span class="v" id="v-seed"></span></div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap">
+            <button class="btn" id="b-repipette" type="button">Re-pipette the tube</button>
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" id="i-avg"> Average 5 preparations (shows spread)</label>
+      </div>
+    </aside>
+
+    <main class="readouts">
+      <section class="card" id="card-bars">
+        <div class="head"><h2>Where the perplexity goes</h2><span class="note mono" id="breakdown-base"></span></div>
+        <p class="note">Each effect applied alone at your settings, then all together, on one preparation. Bars show perplexity added over this model's FP32 silicon baseline on the same 20,000 held-out characters.</p>
+        <div class="bars" id="bars"></div>
+      </section>
+
+      <section class="card" id="card-ladder">
+        <div class="head"><h2>Energy per token, three accountings</h2><span class="note">log scale, joules</span></div>
+        <div id="ladder"></div>
+        <p class="note" id="ladder-note"></p>
+      </section>
+
+      <section class="card" id="card-frontier">
+        <div class="head"><h2>Perplexity vs joules per token</h2>
+          <div class="legend">
+            <span><i class="k" style="background:var(--s1)"></i>E<sub>chem</sub></span>
+            <span><i class="k" style="background:var(--s2)"></i>E<sub>wall-plug</sub></span>
+            <span><i class="k" style="background:var(--s3)"></i>E<sub>amortised</sub></span>
+            <span>◆ your tube</span><span>○ hollow: over 10<sup>4</sup> strands</span>
+          </div>
+        </div>
+        <div id="frontier"></div>
+        <p class="note">Faint points: 480 configurations from <span class="mono">sweep.py</span> (bulk layout, seesaw gate, 3 preparations each, full 111k-character held-out set). Diamonds: your current tube, scored on the 20k-character sample, so they sit about 3% higher than the sweep for the same recipe.</p>
+      </section>
+
+      <div class="two">
+        <section class="card" id="card-cliff">
+          <div class="head"><h2>The leak cliff</h2></div>
+          <div id="cliff"></div>
+          <div class="legend">
+            <span><i class="k" style="background:var(--s1)"></i>leak only</span>
+            <span><i class="k" style="background:var(--s2)"></i>+ σ 0.10, 16 levels</span>
+            <span>◆ your tube</span>
+          </div>
+          <p class="note" id="cliff-note"></p>
+        </section>
+        <section class="card" id="card-fuel">
+          <div class="head"><h2>Tube lifetime</h2><span class="note" id="fuel-head"></span></div>
+          <div id="fuel"></div>
+          <p class="note" id="fuel-note"></p>
+        </section>
+      </div>
+
+      <section class="card gen" id="card-gen">
+        <div class="head"><h2>Sample from the tube</h2><span class="note" id="gen-time"></span></div>
+        <div class="controls">
+          <input type="text" id="i-prompt" value="to be, or not to be" aria-label="Prompt" maxlength="60">
+          <label class="check" for="i-temp">T <input type="number" id="i-temp" value="0.8" min="0.1" max="2" step="0.1" style="width:64px"></label>
+          <button class="btn primary" id="b-gen" type="button">Generate 160 characters</button>
+        </div>
+        <output id="gen-out" aria-live="polite"></output>
+        <p class="note">DNA computes in batch, never interactively. In a real tube each character is one full settling of the circuit; the time above is what this line would take on the bench.</p>
+      </section>
+
+      <section class="card" id="key">
+        <div class="head"><h2>Key</h2><span class="note">every term on this page, in plain words</span></div>
+        <div class="key" id="key-body"></div>
+      </section>
+
+      <section class="card">
+        <h2>What this can and cannot claim</h2>
+        <div class="limits">
+          <p><strong>Constants are from the literature, not a bench.</strong> σ, leak, 20 kT per displacement, settling times, the 50 W plate reader and the 10<sup>3</sup>–10<sup>4</sup> domain library are published values. The shape of the frontier and the ordering of effects are the defensible claims; absolute joules are not.</p>
+          <p><strong>Built networks hold 10<sup>2</sup>–10<sup>3</sup> weights.</strong> Even the 4-unit model here (961 weights, about 1.1k strands) is at the edge of what has been demonstrated. Width 32 is a projection; anything over 10<sup>4</sup> strands is extrapolation.</p>
+          <p><strong>Batch amortisation is the fragile number.</strong> It assumes one molecule per species per inference and 6×10<sup>13</sup> independent reaction volumes. Move copies per inference to 100 and the bulk tube loses to a GPU running the same model.</p>
+          <p><strong>This page is the same simulator.</strong> <span class="mono">sim.js</span> reproduces <span class="mono">dna.py</span> to within 2×10<sup>−6</sup> relative perplexity on deterministic recipes. Pipetting draws use a different random generator, so a preparation here is not the same draw as a PyTorch seed.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <footer>Model: one-hot context of 6 characters × 33 symbols → hidden layer → 33 logits, trained in FP32 on tiny Shakespeare. Source: BASES_Project (dna.py, model.py, sweep.py).</footer>
+</div>
+<div id="tip" hidden></div>
+<div id="pop" role="dialog" aria-modal="false" hidden></div>
+
+<script src="data.js"></script>
+<script src="sim.js"></script>
+<script>
+(function () {
+  const D = window.DNA_DATA, S = window.DNASim, C0 = D.config;
+  const encode = (t) => S.encode(D, t);
+  const sampleIds = S.encode(D, D.sample);
+  const WIDTHS = [4, 8, 16, 32, 64];
+
+  const PRESETS = {
+    "Ideal substrate": { sigma: 0, leak: null, levels: null, thr: 0, gain: 1, ymax: 1, fuel: null },
+    "Literature realistic": { width: 32, trained: "seesaw", act: "seesaw", sigma: 0.1, leak: 1e-3, levels: 16, thr: 0, gain: 1, ymax: 1, fuel: null },
+    "Pessimistic end": { sigma: 0.15, leak: 1e-2, levels: 8, thr: 0, gain: 1, ymax: 1, fuel: null },
+    "Past the cliff": { sigma: 0.1, leak: 3e-2, levels: 16, thr: 0, gain: 1, ymax: 1, fuel: null },
+    "Too big to build": { width: 64, trained: "seesaw", act: "seesaw", sigma: 0.1, leak: 1e-3, levels: 16, fuel: null },
+    "Fuel runs out": { width: 32, trained: "seesaw", act: "seesaw", sigma: 0.1, leak: 1e-3, levels: 16, fuel: 3000 },
+  };
+  const st = { width: 32, trained: "seesaw", act: "seesaw", sigma: 0.1, leak: 1e-3, levels: 16,
+               thr: 0, gain: 1, ymax: 1, fuel: null, arch: "bulk", copies: 1, domains: 1e4, seed: 1, avg: false };
+
+  // ---------- formatting ----------
+  function sci(x, digits = 2) {
+    if (!isFinite(x)) return "∞";
+    if (x === 0) return "0";
+    const e = Math.floor(Math.log10(Math.abs(x)));
+    if (e >= -2 && e <= 3) return x.toPrecision(digits + 1).replace(/\.?0+$/, "");
+    const m = x / Math.pow(10, e);
+    return `${m.toFixed(digits - 1)}×10<sup>${String(e).replace("-", "−")}</sup>`;
+  }
+  const J = (x) => `${sci(x)} J`;
+  function dur(s) {
+    if (s < 1e-6) return `${sci(s)} s`;
+    if (s < 120) return `${+s.toPrecision(3)} s`;
+    if (s < 7200) return `${+(s / 60).toPrecision(3)} min`;
+    if (s < 172800) return `${+(s / 3600).toPrecision(3)} h`;
+    if (s < 3.15e7) return `${+(s / 86400).toPrecision(3)} days`;
+    return `${+(s / 3.15e7).toPrecision(3)} years`;
+  }
+  const plainLeak = (l) => (l == null ? "off" : l.toExponential(1));
+
+  // ---------- controls ----------
+  const $ = (id) => document.getElementById(id);
+  function seg(id, values, key, label = (v) => String(v)) {
+    const el = $(id);
+    el.innerHTML = values.map((v) => `<button type="button" data-v="${v}">${label(v)}</button>`).join("");
+    el.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      const v = b.dataset.v; st[key] = isNaN(+v) ? v : +v; sync(); schedule();
+    });
+  }
+  seg("seg-width", WIDTHS, "width");
+  seg("seg-trained", ["relu", "seesaw"], "trained", (v) => (v === "relu" ? "ReLU" : "seesaw"));
+  seg("seg-act", ["seesaw", "relu"], "act", (v) => (v === "relu" ? "ReLU" : "seesaw gate"));
+  seg("seg-arch", ["bulk", "localised"], "arch", (v) => (v === "bulk" ? "bulk tube" : "DNA origami"));
+
+  $("presets").innerHTML = Object.keys(PRESETS).map((k) => `<button class="btn" type="button">${k}</button>`).join("");
+  $("presets").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    Object.assign(st, PRESETS[b.textContent]); sync(); schedule();
+  });
+
+  const bind = (id, fn) => $(id).addEventListener("input", () => { fn($(id).value); sync(); schedule(); });
+  bind("i-sigma", (v) => (st.sigma = +v));
+  bind("i-leak", (v) => (st.leak = +v < -5 ? null : Math.pow(10, +v)));
+  bind("i-levels", (v) => (st.levels = v ? +v : null));
+  bind("i-thr", (v) => (st.thr = +v));
+  bind("i-gain", (v) => (st.gain = +v));
+  bind("i-ymax", (v) => (st.ymax = +v));
+  bind("i-fuel", (v) => (st.fuel = +v > 5 ? null : Math.pow(10, +v)));
+  bind("i-copies", (v) => (st.copies = Math.pow(10, +v)));
+  bind("i-domains", (v) => (st.domains = Math.pow(10, +v)));
+  $("i-avg").addEventListener("change", () => { st.avg = $("i-avg").checked; schedule(); });
+  $("b-repipette").addEventListener("click", () => { st.seed += 1; sync(); schedule(); });
+
+  function sync() {
+    for (const [id, key] of [["seg-width", "width"], ["seg-trained", "trained"], ["seg-act", "act"], ["seg-arch", "arch"]])
+      for (const b of $(id).children) b.setAttribute("aria-pressed", String(b.dataset.v === String(st[key])));
+    $("v-width").textContent = `${st.width} units · ${D.models[key()].params.toLocaleString()} weights`;
+    $("i-sigma").value = st.sigma; $("v-sigma").textContent = st.sigma.toFixed(2);
+    $("i-leak").value = st.leak == null ? -5.25 : Math.log10(st.leak); $("v-leak").textContent = plainLeak(st.leak);
+    $("i-levels").value = st.levels == null ? "" : String(st.levels);
+    $("v-levels").textContent = st.levels == null ? "∞" : `${st.levels} · ${(1000 / (st.levels - 1)).toPrecision(3)} nM steps`;
+    $("i-thr").value = st.thr; $("v-thr").textContent = st.thr.toFixed(3);
+    $("i-gain").value = st.gain; $("v-gain").textContent = st.gain.toFixed(2);
+    $("i-ymax").value = st.ymax; $("v-ymax").textContent = st.ymax.toFixed(2);
+    $("i-fuel").value = st.fuel == null ? 5.25 : Math.log10(st.fuel);
+    $("v-fuel").textContent = st.fuel == null ? "unlimited" : `${Math.round(st.fuel).toLocaleString()} releases`;
+    $("i-copies").value = Math.log10(st.copies); $("v-copies").textContent = Math.round(st.copies).toLocaleString();
+    $("i-domains").value = Math.log10(st.domains); $("v-domains").textContent = Math.round(st.domains).toLocaleString();
+    $("v-seed").textContent = `preparation #${st.seed}`;
+    const seesaw = st.act === "seesaw";
+    for (const id of ["i-thr", "i-gain", "i-ymax", "i-fuel"]) $(id).disabled = !seesaw;
+    $("i-avg").checked = st.avg;
+  }
+
+  // ---------- simulation ----------
+  const key = () => `h${st.width}_${st.trained}`;
+  const modelCache = {}, baseCache = {};
+  const model = (k) => (modelCache[k] ||= S.unpackModel(D, k));
+  function cfg(over = {}) {
+    return { ...C0, sigma: st.sigma, leak_rate: st.leak ?? 0, n_levels: st.levels, threshold: st.thr,
+             gain: st.gain, y_max: st.ymax, fuel_budget: st.fuel, architecture: st.arch,
+             copies_per_inference: st.copies, max_orthogonal_domains: st.domains, ...over };
+  }
+  const IDEAL = { sigma: 0, leak_rate: 0, n_levels: null, threshold: 0, gain: 1, fuel_budget: null };
+  function baseline(k) {
+    if (baseCache[k]) return baseCache[k];
+    const tr = D.models[k].trained;
+    const c = { ...C0, ...IDEAL, y_max: tr === "seesaw" ? 1 : null };
+    return (baseCache[k] = S.evaluate(S.prepare(model(k), c, 0), c, tr, sampleIds).ppl);
+  }
+  function run(c, seed, windowSize) {
+    const prep = S.prepare(model(key()), c, seed);
+    return { prep, ...S.evaluate(prep, c, st.act, sampleIds, windowSize) };
+  }
+
+  let timer = null;
+  function schedule() { clearTimeout(timer); timer = setTimeout(compute, 90); }
+
+  let last = null;
+  function compute() {
+    const k = key(), c = cfg(), base = baseline(k);
+    const n = st.avg ? 5 : 1;
+    const runs = [];
+    for (let i = 0; i < n; i++) runs.push(run(c, st.seed + i, 1000));
+    const ppls = runs.map((r) => r.ppl);
+    const mean = ppls.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(ppls.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+    const acc = S.accounting(runs[0].prep, c, st.act);
+    const gpu = 2 * D.models[k].params * C0.gpu_J_per_flop;
+    // breakdown: each effect alone at current seesaw settings
+    const off = { sigma: 0, leak_rate: 0, n_levels: null, fuel_budget: null };
+    const one = (o) => S.evaluate(S.prepare(model(k), cfg({ ...off, ...o }), st.seed), cfg({ ...off, ...o }), st.act, sampleIds).ppl;
+    const parts = [
+      [st.act === "seesaw" ? "seesaw gate only" : "ReLU only", one({})],
+      [`${st.levels ?? "∞"} levels only`, st.levels ? one({ n_levels: st.levels }) : null],
+      [`σ ${st.sigma.toFixed(2)} only`, st.sigma ? one({ sigma: st.sigma }) : null],
+      [`leak ${plainLeak(st.leak)} only`, st.leak ? one({ leak_rate: st.leak }) : null],
+      ["fuel only", st.fuel && st.act === "seesaw" ? one({ fuel_budget: st.fuel }) : null],
+      ["all together", runs[0].ppl],
+    ];
+    last = { k, c, base, mean, sd, n, acc, gpu, parts, windows: runs[0].windows };
+    render(last);
+  }
+
+  // ---------- rendering ----------
+  function render(R) {
+    const { base, mean, sd, n, acc, gpu } = R;
+    const ratio = mean / base;
+    $("r-ppl").textContent = mean >= 1000 ? mean.toExponential(1) : mean.toFixed(2);
+    const status = ratio < 1.001 ? `<span class="pill good">matches silicon</span>` :
+      ratio < 1.1 ? `<span class="pill good">within 10% of silicon</span>` :
+      ratio < 2 ? `<span class="pill warn">+${((ratio - 1) * 100).toFixed(0)}% vs silicon</span>` :
+      `<span class="pill bad">${ratio.toFixed(1)}× silicon</span>`;
+    $("r-ppl-sub").innerHTML = `FP32 silicon ${base.toFixed(2)}${n > 1 ? ` · ±${sd.toFixed(2)} over ${n}` : ""} · uniform guess 33<br>${status}`;
+    $("r-chem").innerHTML = J(acc.E_chem);
+    $("r-chem-sub").innerHTML = `${(acc.E_chem / acc.E_landauer).toFixed(0)}× Landauer for ${Math.round(acc.ops).toLocaleString()} ops`;
+    $("r-wall").innerHTML = J(acc.E_wallplug);
+    $("r-wall-sub").innerHTML = `plate reader 50 W × ${dur(acc.latency)} per token`;
+    $("r-am").innerHTML = J(acc.E_amortised);
+    const vs = acc.E_amortised / gpu;
+    $("r-am-sub").innerHTML = vs < 1 ? `${(1 / vs).toPrecision(2)}× below GPU, same model (est.)` : `<span style="color:var(--bad)">${vs.toPrecision(2)}× above GPU, same model (est.)</span>`;
+    $("r-strands").textContent = acc.strands.toLocaleString();
+    $("r-feas").innerHTML = acc.feasible ? `<span class="pill good">fits ${Math.round(st.domains).toLocaleString()}-domain library</span>` :
+      `<span class="pill bad">infeasible: over ${Math.round(st.domains).toLocaleString()} domains</span>`;
+    renderBars(R); renderLadder(R); renderFrontier(R); renderCliff(R); renderFuel(R);
+    $("gen-time").textContent = `160 characters ≈ ${dur(160 * acc.latency)} of settling at batch 1`;
+  }
+
+  function renderBars(R) {
+    const rows = R.parts.filter((p) => p[1] != null);
+    const deltas = rows.map((p) => Math.max(0, p[1] - R.base));
+    const cap = Math.max(R.base * 1.5, 0.5);
+    const scale = Math.min(Math.max(...deltas, 0.3), cap);
+    $("breakdown-base").textContent = `FP32 baseline ${R.base.toFixed(3)}`;
+    $("bars").innerHTML = rows.map(([label, p], i) => {
+      const d = p - R.base, w = Math.min(Math.max(d, 0) / scale, 1) * 100;
+      const over = Math.max(d, 0) > scale ? " ▸" : "";
+      const v = p >= 1000 ? p.toExponential(1) : p.toFixed(2);
+      return `<div class="bar${label === "all together" ? " total" : ""}"><span>${label}</span><span class="track"><span class="fill" style="width:${w}%"></span></span><span class="val">${v}${over}</span></div>`;
+    }).join("");
+  }
+
+  // generic log-log SVG helpers
+  const lg = Math.log10;
+  function axes(W, H, m, xd, yd, xlab, ylab, xticks, yticks) {
+    const X = (v) => m.l + (lg(v) - lg(xd[0])) / (lg(xd[1]) - lg(xd[0])) * (W - m.l - m.r);
+    const Y = (v) => H - m.b - (lg(v) - lg(yd[0])) / (lg(yd[1]) - lg(yd[0])) * (H - m.t - m.b);
+    let s = "";
+    for (const t of xticks) s += `<line class="gridline" x1="${X(t)}" x2="${X(t)}" y1="${m.t}" y2="${H - m.b}"/><text x="${X(t)}" y="${H - m.b + 14}" text-anchor="middle">${tickLabel(t)}</text>`;
+    for (const t of yticks || []) s += `<line class="gridline" x1="${m.l}" x2="${W - m.r}" y1="${Y(t)}" y2="${Y(t)}"/><text x="${m.l - 6}" y="${Y(t) + 3.5}" text-anchor="end">${tickLabel(t)}</text>`;
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}" style="stroke:var(--muted)"/>`;
+    if (xlab) s += `<text x="${(m.l + W - m.r) / 2}" y="${H - 4}" text-anchor="middle">${xlab}</text>`;
+    if (ylab) s += `<text transform="translate(12 ${(m.t + H - m.b) / 2}) rotate(-90)" text-anchor="middle">${ylab}</text>`;
+    return { X, Y, s };
+  }
+  function tickLabel(t) {
+    const e = Math.round(lg(t));
+    if (Math.abs(lg(t) - e) > 1e-9 || (e >= 0 && e <= 3)) return String(+t.toPrecision(3));
+    return `10${String(e).replace("-", "−").replace(/\d/g, (d) => "⁰¹²³⁴⁵⁶⁷⁸⁹"[d]).replace("−", "⁻")}`;
+  }
+  const decades = (a, b, step = 1) => { const o = []; for (let e = a; e <= b; e += step) o.push(Math.pow(10, e)); return o; };
+  const diamond = (x, y, r, cls, extra = "") => `<path d="M${x} ${y - r}L${x + r} ${y}L${x} ${y + r}L${x - r} ${y}Z" style="fill:${cls};stroke:var(--panel);stroke-width:2" ${extra}/>`;
+
+  function renderLadder(R) {
+    const W = 860, H = 132, m = { l: 14, r: 14, t: 40, b: 34 };
+    const a = axes(W, H, m, [1e-20, 1e7], [1, 10], "joules per token", null, decades(-20, 7, 3));
+    const lo = C0.gpu_J_per_token_70B[0], hi = C0.gpu_J_per_token_70B[1];
+    const yMid = (m.t + H - m.b) / 2;
+    let s = a.s;
+    s += `<rect x="${a.X(lo)}" y="${m.t - 6}" width="${a.X(hi) - a.X(lo)}" height="${H - m.b - m.t + 6}" style="fill:var(--muted);opacity:.18"/>`;
+    s += `<text x="${a.X(Math.sqrt(lo * hi))}" y="${m.t - 10}" text-anchor="middle">GPU, 70B LLM</text>`;
+    const pts = [
+      ["Landauer", R.acc.E_landauer, "var(--ink)", "line"],
+      ["E_chem", R.acc.E_chem, "var(--s1)", "dot"],
+      ["E_amortised", R.acc.E_amortised, "var(--s3)", "dot"],
+      ["GPU, this model", R.gpu, "var(--ink)", "star"],
+      ["E_wall-plug", R.acc.E_wallplug, "var(--s2)", "dot"],
+    ];
+    pts.forEach(([name, v, col, kind], i) => {
+      const x = a.X(Math.min(Math.max(v, 1e-20), 1e7));
+      const up = i % 2 === 0;
+      const ty = up ? m.t - 10 : H - m.b - 4;
+      if (kind === "line") s += `<line x1="${x}" x2="${x}" y1="${m.t - 4}" y2="${H - m.b}" style="stroke:${col};stroke-dasharray:2 3"/>`;
+      else if (kind === "star") s += `<path d="${star(x, yMid, 8)}" style="fill:${col}"/>`;
+      else s += `<circle cx="${x}" cy="${yMid}" r="7" style="fill:${col};stroke:var(--panel);stroke-width:2" data-tip="${name}: ${v.toExponential(2)} J"/>`;
+      s += `<text x="${x}" y="${kind === "line" ? m.t - 10 : (up ? yMid - 13 : yMid + 22)}" text-anchor="middle" style="fill:var(--ink)">${name}</text>`;
+    });
+    $("ladder").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Energy per token on a log scale">${s}</svg>`;
+    const gap = Math.log10(R.acc.E_wallplug / R.acc.E_amortised);
+    $("ladder-note").innerHTML = `Sharing the plate reader across ${sci(C0.n_parallel / st.copies)} parallel inferences moves the wall-plug figure ${gap.toFixed(1)} decades left. Chemistry stays per inference. The GPU star is an estimate for this ${D.models[R.k].params.toLocaleString()}-weight model at 10<sup>−11</sup> J/FLOP; the 70B band is a scale reference for a different model.`;
+  }
+  function star(cx, cy, r) {
+    let d = "";
+    for (let i = 0; i < 10; i++) {
+      const rr = i % 2 ? r * 0.45 : r, a = -Math.PI / 2 + i * Math.PI / 5;
+      d += `${i ? "L" : "M"}${cx + rr * Math.cos(a)} ${cy + rr * Math.sin(a)}`;
+    }
+    return d + "Z";
+  }
+
+  function renderFrontier(R) {
+    const W = 860, H = 380, m = { l: 48, r: 16, t: 14, b: 40 };
+    const yd = [5.8, 24];
+    const a = axes(W, H, m, [1e-17, 1e7], yd, "joules per token", "perplexity", decades(-17, 7, 3), [6, 7, 8, 10, 12, 16, 20]);
+    let s = a.s;
+    const baseFull = D.summary.fp32_ppl.relu;
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${a.Y(baseFull)}" y2="${a.Y(baseFull)}" style="stroke:var(--ink);stroke-dasharray:6 3 2 3"/>`;
+    s += `<text x="${a.X(1e-12)}" y="${a.Y(baseFull) - 5}">FP32 silicon, width 32 ReLU · ${baseFull.toFixed(2)}</text>`;
+    const land = D.summary.realistic_main.bulk.E_landauer;
+    s += `<line x1="${a.X(land)}" x2="${a.X(land)}" y1="${m.t}" y2="${H - m.b}" style="stroke:var(--ink);stroke-dasharray:2 3"/>`;
+    s += `<text x="${a.X(land) + 5}" y="${m.t + 10}">Landauer, width 32</text>`;
+    const series = [["E_chem", "var(--s1)"], ["E_wallplug", "var(--s2)"], ["E_amortised", "var(--s3)"]];
+    for (const g of D.grid) {
+      if (g.ppl > yd[1]) continue;
+      for (const [k, col] of series) {
+        const x = a.X(g[k]), y = a.Y(g.ppl);
+        const tip = `width ${g.h}, ${g.trained}-trained · σ ${g.sigma} · leak ${g.leak} · ${g.levels ?? "∞"} levels<br>ppl ${g.ppl.toFixed(2)} · ${k} ${g[k].toExponential(2)} J${g.feasible ? "" : " · infeasible"}`;
+        s += g.feasible ? `<circle cx="${x}" cy="${y}" r="3" style="fill:${col};opacity:.28" data-tip="${tip}"/>` :
+          `<circle cx="${x}" cy="${y}" r="3" style="fill:none;stroke:${col};opacity:.5" data-tip="${tip}"/>`;
+      }
+    }
+    for (const [k, col] of series) {
+      const v = R.acc[k], clipped = R.mean > yd[1];
+      const x = a.X(Math.min(Math.max(v, 1e-17), 1e7)), y = a.Y(Math.min(R.mean, yd[1]));
+      s += diamond(x, y, 8, R.acc.feasible ? col : "var(--panel)", `data-tip="Your tube · ${k} ${v.toExponential(2)} J · ppl ${R.mean.toFixed(2)}${clipped ? " (off the top)" : ""}"`);
+      if (!R.acc.feasible) s += `<path d="M${x} ${y - 6}L${x + 6} ${y}L${x} ${y + 6}L${x - 6} ${y}Z" style="fill:none;stroke:${col};stroke-width:2"/>`;
+    }
+    $("frontier").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Perplexity against joules per token">${s}</svg>`;
+  }
+
+  function renderCliff(R) {
+    const W = 420, H = 280, m = { l: 44, r: 10, t: 12, b: 40 };
+    const a = axes(W, H, m, [1e-5, 1], [5, 1e5], "leak rate", "perplexity", decades(-5, 0, 1), [10, 100, 1e3, 1e4, 1e5]);
+    let s = a.s;
+    s += `<rect x="${a.X(1e-3)}" y="${m.t}" width="${a.X(1e-2) - a.X(1e-3)}" height="${H - m.t - m.b}" style="fill:var(--muted);opacity:.16"/>`;
+    s += `<text x="${a.X(Math.sqrt(1e-5))}" y="${m.t + 12}" text-anchor="middle">literature range →</text>`;
+    const combo = `${st.trained}|${st.act === "relu" && st.trained === "seesaw" ? "seesaw" : st.act}`;
+    const lines = [[`ideal|${combo}`, "var(--s1)"], [`realistic|${combo}`, "var(--s2)"]];
+    for (const [k, col] of lines) {
+      const pts = D.leak_curves[k]; if (!pts) continue;
+      const d = pts.map(([x, y], i) => `${i ? "L" : "M"}${a.X(x)} ${a.Y(Math.min(Math.max(y, 5), 1e5))}`).join("");
+      s += `<path d="${d}" style="fill:none;stroke:${col};stroke-width:2"/>`;
+      for (const [x, y, sd] of pts) s += `<circle cx="${a.X(x)}" cy="${a.Y(Math.min(Math.max(y, 5), 1e5))}" r="6" style="fill:transparent" data-tip="leak ${x.toExponential(1)} · ppl ${y.toPrecision(4)}${sd ? " ± " + sd.toPrecision(2) : ""}"/>`;
+    }
+    if (st.leak) {
+      const x = a.X(Math.max(st.leak, 1e-5)), y = a.Y(Math.min(Math.max(R.mean, 5), 1e5));
+      s += `<line x1="${x}" x2="${x}" y1="${m.t}" y2="${H - m.b}" style="stroke:var(--accent);stroke-dasharray:3 3"/>`;
+      s += diamond(x, y, 7, "var(--accent)", `data-tip="Your tube · leak ${st.leak.toExponential(1)} · ppl ${R.mean.toFixed(2)}"`);
+    }
+    $("cliff").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Perplexity against leak rate">${s}</svg>`;
+    const knee = D.summary.leak_knee[`ideal/${st.trained}-trained/${combo.split("|")[1]}`];
+    $("cliff-note").innerHTML = knee ? `Sweep for this model's training: flat to about 10<sup>−3</sup>, +10% at leak ${knee["knee_leak_rate_+10pct"].toExponential(1)}, doubled at ${knee.knee_leak_rate_x2.toExponential(1)}. Curves are width 32 from the sweep; the diamond is your tube.` : "";
+  }
+
+  function renderFuel(R) {
+    const W = 420, H = 280, m = { l: 44, r: 10, t: 12, b: 40 };
+    const w = R.windows, n = w.length;
+    const ymax = Math.max(R.base * 1.6, ...w.map((v) => Math.min(v, 60))) * 1.05;
+    const X = (i) => m.l + (i / n) * (W - m.l - m.r);
+    const Y = (v) => H - m.b - (Math.min(v, ymax) - 0) / ymax * (H - m.t - m.b);
+    let s = "";
+    for (let t = 0; t <= ymax; t += ymax > 30 ? 10 : 5) s += `<line class="gridline" x1="${m.l}" x2="${W - m.r}" y1="${Y(t)}" y2="${Y(t)}"/><text x="${m.l - 6}" y="${Y(t) + 3.5}" text-anchor="end">${t}</text>`;
+    for (let k = 0; k <= 20; k += 5) s += `<text x="${X(k)}" y="${H - m.b + 14}" text-anchor="middle">${k}k</text>`;
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}" style="stroke:var(--muted)"/>`;
+    s += `<text x="${(m.l + W - m.r) / 2}" y="${H - 4}" text-anchor="middle">characters served by one tube</text>`;
+    s += `<text transform="translate(12 ${(m.t + H - m.b) / 2}) rotate(-90)" text-anchor="middle">perplexity per 1k chars</text>`;
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(R.base)}" y2="${Y(R.base)}" style="stroke:var(--ink);stroke-dasharray:6 3 2 3"/>`;
+    const area = w.map((v, i) => `L${X(i + 0.5)} ${Y(v)}`).join("");
+    s += `<path d="M${X(0.5)} ${H - m.b}${area}L${X(n - 0.5)} ${H - m.b}Z" style="fill:var(--accent);opacity:.12"/>`;
+    s += `<path d="M${area.slice(1)}" style="fill:none;stroke:var(--accent);stroke-width:2"/>`;
+    w.forEach((v, i) => (s += `<circle cx="${X(i + 0.5)}" cy="${Y(v)}" r="7" style="fill:transparent" data-tip="chars ${i}k–${i + 1}k · ppl ${v.toFixed(2)}"/>`));
+    s += `<circle cx="${X(n - 0.5)}" cy="${Y(w[n - 1])}" r="4" style="fill:var(--accent)"/>`;
+    $("fuel").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Perplexity over the character stream">${s}</svg>`;
+    const fuelOn = st.fuel && st.act === "seesaw";
+    $("fuel-head").textContent = fuelOn ? `${Math.round(st.fuel).toLocaleString()} releases per neuron` : "fuel unlimited";
+    const first = w.findIndex((v, i) => i > 0 && v > 1.1 * (w.slice(0, 1)[0]));
+    $("fuel-note").innerHTML = !fuelOn ? "With unlimited fuel the curve only tracks how hard each passage of the text is. Set a fuel budget to watch the gates run down." :
+      first > 0 ? `Perplexity is 10% above the first window after about ${first}k characters. The sweep found roughly two characters per unit of fuel before that point.` :
+      `Fuel holds for all 20k characters at this budget.`;
+  }
+
+  // ---------- generation ----------
+  $("b-gen").addEventListener("click", () => {
+    const prep = S.prepare(model(key()), cfg(), st.seed);
+    const prompt = $("i-prompt").value || " ";
+    const p = encode(prompt.padStart(D.ctx, " "));
+    const temp = Math.min(Math.max(+$("i-temp").value || 0.8, 0.1), 2);
+    const out = S.generate(prep, cfg(), st.act, p, 160, temp, st.seed + Date.now() % 1000);
+    const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    $("gen-out").innerHTML = `<b>${esc(prompt.toLowerCase())}</b>${esc(out.map((i) => D.vocab[i]).join(""))}`;
+  });
+
+  // ---------- key, info buttons, guided tour ----------
+  const GLOSSARY = [
+    ["Reading the numbers", [
+      ["perplexity", "Perplexity", "How surprised the model is by the next letter. 33 means it is guessing at random among the 33 symbols it knows. Lower is better. This model scores about 7 when run on an ordinary computer."],
+      ["baseline", "FP32 silicon baseline", "The same trained weights run on a normal computer in 32-bit floating point. It is the best the tube could ever do, so every DNA result is compared to it."],
+      ["chem", "E_chem", "Energy released by the DNA reactions alone for one predicted letter. This is the number where DNA looks extraordinary."],
+      ["wall", "E_wall-plug", "E_chem plus the electricity of the 50 W plate reader that watches the tube while it settles. For a single letter this is enormous."],
+      ["amortised", "E_amortised", "The plate reader's energy shared across every inference running in the tube at once, plus each inference's own chemistry. This is the batch-computing argument for DNA."],
+      ["landauer", "Landauer limit", "The minimum energy physics allows for erasing one bit at room temperature: kT·ln 2, about 2.9×10⁻²¹ J. The dotted line shows that floor for this model's number of operations."],
+      ["kt", "kT", "The thermal energy of one molecule at room temperature, about 4.1×10⁻²¹ J. One strand-displacement step releases about 20 kT."],
+      ["gpu", "GPU reference", "The star estimates what a graphics card would spend running this same small model, assuming perfect utilisation. The grey band is a large 70-billion-parameter chatbot. It is a different model, shown only for scale."],
+    ]],
+    ["The chemistry", [
+      ["displacement", "Strand displacement", "The basic DNA computing step. A free strand grabs a short sticky end (a toehold) on a double-stranded complex, zips along it and knocks one strand loose. The released strand is the output signal, and it can trigger the next gate."],
+      ["concentration", "Weight as concentration", "In the tube a weight is an amount: how many nanomolar of one particular gate strand you pipette in. A bigger weight means more strand. The largest weight in each layer is pipetted at full scale, taken here as 1 µM."],
+      ["dualrail", "Dual rail", "A concentration cannot be negative, so a signed weight uses two strands, one for the positive part and one for the negative part. An annihilator strand cancels them against each other."],
+      ["levels", "Concentration levels", "How finely you can set each amount. 16 levels is about what careful pipetting achieves, roughly a 4-bit number. Fewer levels round every weight more coarsely."],
+      ["sigma", "Pipetting error σ", "Every amount you pipette is off by a random percentage. σ = 0.10 means typically about ±10%. The error multiplies the amount, so a strand is never pipetted in at a negative concentration."],
+      ["leak", "Leak", "Gates sometimes fire without their input present. Each one releases a little output on its own, in proportion to how much gate is in the tube. It adds a background glow that hides small signals."],
+      ["preparation", "Preparation", "One physical mixing of the tube. Pipetting errors land differently every time, so two preparations of the same recipe score slightly differently. Re-pipette to draw a new one."],
+    ]],
+    ["The gate", [
+      ["seesaw", "Seesaw gate", "DNA's own on/off switch. It ignores input below a threshold θ, multiplies what is above it by a gain, and tops out at y_max when its fuel strands are used up. y = clamp(gain·(x − θ), 0, y_max). It plays the role ReLU plays on a computer."],
+      ["relu", "ReLU", "The usual computer neural-network switch: negative values become 0, positive ones pass through. There is no DNA version. It is here only for comparison."],
+      ["trained", "Trained with", "Whether the computer trained the model with ReLU and swapped in the seesaw gate afterwards, or trained it with the seesaw gate from the start. Training with seesaw makes the model sturdier against bad pipetting."],
+      ["width", "Hidden width", "How many neurons sit in the middle layer. More neurons predict better but need more distinct DNA strands."],
+      ["fuel", "Fuel", "Seesaw gates amplify by consuming fuel strands. Reuse one tube for many letters and the fuel runs down, so the gates get weaker and predictions get worse."],
+    ]],
+    ["Building and running it", [
+      ["strands", "Distinct strands", "How many different DNA sequences the circuit needs: one per non-zero weight, plus input, output, annihilator and gate strands."],
+      ["domains", "Orthogonal domain library", "Every distinct strand needs a sequence that does not stick to any of the others. Current design tools give roughly 1,000 to 10,000 such sequences. A recipe that needs more is marked infeasible."],
+      ["layout", "Bulk tube vs DNA origami", "In a bulk tube, strands float freely and find each other by diffusion, about an hour per layer. On DNA origami, gates are pinned next to each other on a folded-DNA scaffold, about a minute per layer."],
+      ["copies", "Copies per inference", "How many molecules of each strand one prediction uses. 1 is the idealised limit. Real analog chemistry needs many copies to average out randomness, which shrinks the batch."],
+      ["batch", "Batch inference", "100 µL of tube at 1 µM holds about 6×10¹³ molecules. If each one ran its own prediction, one slow plate-reader session would answer trillions of queries at once. DNA cannot do fast back-and-forth chat."],
+      ["temperature", "Sampling temperature T", "When generating text: low T picks the likeliest letter, which is safe but repetitive. High T takes more chances, which is varied but garbled."],
+    ]],
+  ];
+  const TERMS = {};
+  for (const [, items] of GLOSSARY) for (const [id, name, def] of items) TERMS[id] = { name, def };
+
+  const sub = (t) => t.replace(/_(chem|wall-plug|amortised|max)/g, "<sub>$1</sub>");
+  const SYMBOLS = [
+    [`<svg viewBox="0 0 30 16"><circle cx="15" cy="8" r="5" style="fill:var(--s1)"/></svg>`, "Blue: chemistry energy (E<sub>chem</sub>)"],
+    [`<svg viewBox="0 0 30 16"><circle cx="15" cy="8" r="5" style="fill:var(--s2)"/></svg>`, "Orange: wall-plug energy, one letter at a time"],
+    [`<svg viewBox="0 0 30 16"><circle cx="15" cy="8" r="5" style="fill:var(--s3)"/></svg>`, "Green: energy per letter when shared across the batch"],
+    [`<svg viewBox="0 0 30 16"><path d="M15 1L22 8L15 15L8 8Z" style="fill:var(--accent)"/></svg>`, "Diamond: your current tube recipe"],
+    [`<svg viewBox="0 0 30 16"><circle cx="15" cy="8" r="4" style="fill:none;stroke:var(--s1);stroke-width:1.5"/></svg>`, "Hollow: needs more strands than the library allows"],
+    [`<svg viewBox="0 0 30 16"><circle cx="9" cy="8" r="3" style="fill:var(--s1);opacity:.3"/><circle cx="20" cy="6" r="3" style="fill:var(--s1);opacity:.3"/></svg>`, "Faint dots: 480 recipes from the offline sweep"],
+    [`<svg viewBox="0 0 30 16"><line x1="2" x2="28" y1="8" y2="8" style="stroke:var(--ink);stroke-dasharray:6 3 2 3"/></svg>`, "Dash-dot line: the silicon baseline"],
+    [`<svg viewBox="0 0 30 16"><line x1="15" x2="15" y1="1" y2="15" style="stroke:var(--ink);stroke-dasharray:2 3"/></svg>`, "Dotted line: the Landauer limit"],
+    [`<svg viewBox="0 0 30 16"><rect x="4" y="1" width="22" height="14" style="fill:var(--muted);opacity:.3"/></svg>`, "Grey band: published leak range, or the 70B GPU range"],
+    [`<span class="pill good" style="padding:1px 6px">ok</span>`, "Green tag: matches silicon, within 10%, or fits the library"],
+    [`<span class="pill warn" style="padding:1px 6px">+%</span>`, "Amber tag: noticeably worse than silicon"],
+    [`<span class="pill bad" style="padding:1px 6px">×</span>`, "Red tag: twice as bad or worse, or cannot be built"],
+  ];
+  $("key-body").innerHTML =
+    `<section><h3>Chart symbols</h3><div class="symbols">${SYMBOLS.map(([g, t]) => `<div>${g}<span>${t}</span></div>`).join("")}</div></section>` +
+    GLOSSARY.map(([group, items]) => `<section><h3>${group}</h3><dl>${items.map(([id, name, def]) =>
+      `<dt id="term-${id}">${sub(name)}</dt><dd>${sub(def)}</dd>`).join("")}</dl></section>`).join("");
+
+  // info buttons beside labels: [element, term]
+  const lbl = (vid) => $(vid).previousElementSibling;
+  const h3 = (text) => [...document.querySelectorAll(".recipe h3")].find((e) => e.textContent.trim() === text);
+  const rowOf = (segId) => $(segId).previousElementSibling.firstElementChild;
+  const INFO = [
+    [lbl("r-ppl"), "perplexity"], [lbl("r-chem"), "chem"], [lbl("r-wall"), "wall"], [lbl("r-am"), "amortised"], [lbl("r-strands"), "strands"],
+    [lbl("v-width"), "width"], [rowOf("seg-trained"), "trained"], [rowOf("seg-act"), "seesaw"],
+    [lbl("v-sigma"), "sigma"], [lbl("v-leak"), "leak"], [lbl("v-levels"), "levels"],
+    [h3("Seesaw gate"), "seesaw"], [lbl("v-fuel"), "fuel"],
+    [rowOf("seg-arch"), "layout"], [lbl("v-copies"), "copies"], [lbl("v-domains"), "domains"], [lbl("v-seed"), "preparation"],
+    [document.querySelector('label[for="i-temp"]'), "temperature"],
+  ];
+  for (const [el, id] of INFO) {
+    if (!el) continue;
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "info"; b.textContent = "i"; b.dataset.term = id;
+    b.setAttribute("aria-label", `What is ${TERMS[id].name.replace("_", " ")}?`);
+    b.setAttribute("aria-expanded", "false");
+    el.appendChild(b);
+  }
+  const pop = $("pop");
+  let popFor = null;
+  function closePop() { pop.hidden = true; if (popFor) popFor.setAttribute("aria-expanded", "false"); popFor = null; }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".info[data-term]");
+    if (b) {
+      e.preventDefault(); e.stopPropagation();
+      if (popFor === b) return closePop();
+      closePop();
+      const t = TERMS[b.dataset.term];
+      pop.innerHTML = `<span class="term">${sub(t.name)}</span><span>${sub(t.def)}</span><a href="#term-${b.dataset.term}" data-jump="${b.dataset.term}">See it in the key</a>`;
+      pop.hidden = false; popFor = b; b.setAttribute("aria-expanded", "true");
+      const r = b.getBoundingClientRect();
+      const left = Math.max(16, Math.min(r.left - 20, window.innerWidth - pop.offsetWidth - 16));
+      const below = r.bottom + 8 + pop.offsetHeight < window.innerHeight;
+      pop.style.left = left + "px";
+      pop.style.top = (below ? r.bottom + 8 : Math.max(8, r.top - pop.offsetHeight - 8)) + "px";
+      return;
+    }
+    const j = e.target.closest("[data-jump]");
+    if (j) {
+      e.preventDefault(); closePop();
+      const dt = $("term-" + j.dataset.jump);
+      dt.scrollIntoView({ behavior: motion(), block: "center" });
+      dt.classList.add("flash"); setTimeout(() => dt.classList.remove("flash"), 1600);
+      return;
+    }
+    if (!pop.hidden && !pop.contains(e.target)) closePop();
+  }, true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { const b = popFor; closePop(); b && b.focus(); } });
+  window.addEventListener("scroll", () => { if (!pop.hidden) closePop(); }, { passive: true });
+
+  const motion = () => (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+  const BASE = { width: 32, trained: "seesaw", act: "seesaw", sigma: 0.1, leak: 1e-3, levels: 16, thr: 0, gain: 1,
+                 ymax: 1, fuel: null, arch: "bulk", copies: 1, domains: 1e4 };
+  const TOUR = [
+    ["Start with perfect chemistry", { sigma: 0, leak: null, levels: null }, "strip",
+      "No pipetting error, no leak, unlimited resolution. Perplexity matches the computer exactly and the tag turns green: the tube is doing the same math."],
+    ["Add real lab chemistry", {}, "card-bars",
+      "Published values: about ±10% pipetting error, 0.1% leak, 16 concentration levels. The bars show what each imperfection costs on its own. Coarse resolution and pipetting error cost the most; leak this low costs little."],
+    ["Turn up the leak", { leak: 1e-2 }, "card-cliff",
+      "Leak at 1%, the top of the published range. Now drag the leak slider further right. Past about 0.5% perplexity climbs fast, and past 3% the model does worse than random guessing (33)."],
+    ["Count the joules", {}, "card-ladder",
+      "The chemistry itself costs about 10⁻¹⁵ J per letter, within 30× of the physical limit. Running the plate reader for one letter costs hundreds of kilojoules. Shared across the whole batch, it drops below a GPU."],
+    ["Test the batch assumption", { copies: 100 }, "strip",
+      "The batch win assumes one molecule of each strand per prediction. At 100 copies the green figure turns red and the GPU wins. Switch the layout to DNA origami to win it back."],
+    ["Build a bigger model", { width: 64 }, "strip",
+      "Width 64 predicts better, but it needs about 11,500 distinct strands, more than the 10,000 non-interfering sequences available. The strands tag turns red: it cannot be built."],
+    ["Run out of fuel", { fuel: 3000 }, "card-fuel",
+      "One tube reused for 20,000 letters with limited fuel. Perplexity climbs as the amplifiers run dry. Move the fuel slider to see how much fuel buys how many letters."],
+    ["Read what it writes", {}, "card-gen",
+      "Text sampled from the tube at the realistic recipe. Each letter would take two hours of settling in a bulk tube, which is why DNA suits batch jobs, not chat."],
+  ];
+  $("tour").innerHTML = TOUR.map(([t, , , d], i) =>
+    `<li data-i="${i}"><span class="t">${t}</span><button class="btn" type="button" data-step="${i}">Try it</button><span class="d">${d}</span></li>`).join("");
+  $("tour").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-step]"); if (!b) return;
+    const i = +b.dataset.step, [, over, target] = TOUR[i];
+    Object.assign(st, BASE, over); sync(); schedule();
+    for (const li of $("tour").children) li.classList.toggle("active", +li.dataset.i === i);
+    const el = target === "strip" ? document.querySelector(".strip") : $(target);
+    el.scrollIntoView({ behavior: motion(), block: target === "strip" ? "start" : "center" });
+    el.classList.add("spot"); setTimeout(() => el.classList.remove("spot"), 1800);
+    if (target === "card-gen") setTimeout(() => $("b-gen").click(), 150);
+  });
+  try {
+    if (localStorage.getItem("dna-bench-guide") === "closed") $("start").open = false;
+  } catch (_) {}
+  $("start").addEventListener("toggle", () => {
+    try { localStorage.setItem("dna-bench-guide", $("start").open ? "open" : "closed"); } catch (_) {}
+  });
+
+  // ---------- tooltip ----------
+  const tip = $("tip");
+  document.addEventListener("pointermove", (e) => {
+    const t = e.target.closest && e.target.closest("[data-tip]");
+    if (!t) { tip.hidden = true; return; }
+    tip.innerHTML = t.getAttribute("data-tip"); tip.hidden = false;
+    const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
+    tip.style.left = x + "px"; tip.style.top = (e.clientY + 14) + "px";
+  });
+
+  sync(); compute();
+  $("b-gen").click();
+})();
+</script>
+</body>
+</html>
