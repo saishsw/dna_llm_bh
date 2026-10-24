@@ -5,7 +5,7 @@ network would: non-negative dual-rail concentrations, finite pipetting resolutio
 log-normal pipetting error, signal-independent leak, and seesaw threshold-amplify-saturate
 nonlinearity. Every physical constant lives in DNAConfig.
 
-All constants are literature-derived defaults (see SKILL.md / README), not measurements.
+All constants are literature-derived defaults (see DNAConfig below and README), not measurements.
 """
 from dataclasses import dataclass, field, replace
 from typing import Optional

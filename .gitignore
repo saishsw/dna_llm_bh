@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .DS_Store
 .vercel/
+
+# local working notes, kept out of the public repo
+MASTER_PROMPT.md
+research_answers.md
+background_primer.md
+.claude/
