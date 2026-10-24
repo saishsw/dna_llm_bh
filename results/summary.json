@@ -1,0 +1,159 @@
+{
+  "fp32_ppl": {
+    "relu": 7.246116357822397,
+    "seesaw": 6.941729162646941
+  },
+  "main_model": {
+    "hidden": 32,
+    "params": 7457
+  },
+  "leak_knee": {
+    "ideal/relu-trained/relu": {
+      "ppl_at_zero_leak": 7.246117372293467,
+      "knee_leak_rate_+10pct": 0.005273653061553,
+      "knee_leak_rate_x2": 0.0142570115530857
+    },
+    "ideal/relu-trained/seesaw": {
+      "ppl_at_zero_leak": 7.245828702809516,
+      "knee_leak_rate_+10pct": 0.005216073607654166,
+      "knee_leak_rate_x2": 0.01367614500144469
+    },
+    "ideal/seesaw-trained/seesaw": {
+      "ppl_at_zero_leak": 6.941729186908473,
+      "knee_leak_rate_+10pct": 0.0036055252289859093,
+      "knee_leak_rate_x2": 0.01048941924515954
+    },
+    "realistic/relu-trained/relu": {
+      "ppl_at_zero_leak": 8.909752514641866,
+      "knee_leak_rate_+10pct": 0.003651958348643379,
+      "knee_leak_rate_x2": 0.011916646334327452
+    },
+    "realistic/relu-trained/seesaw": {
+      "ppl_at_zero_leak": 8.903131487372741,
+      "knee_leak_rate_+10pct": 0.003656333459255253,
+      "knee_leak_rate_x2": 0.011768481102325397
+    },
+    "realistic/seesaw-trained/seesaw": {
+      "ppl_at_zero_leak": 7.804763226169504,
+      "knee_leak_rate_+10pct": 0.003621019883363973,
+      "knee_leak_rate_x2": 0.010625149534605386
+    }
+  },
+  "seesaw_cost": {
+    "ideal": {
+      "relu": [
+        7.246117372293467,
+        0.0,
+        5
+      ],
+      "seesaw_swapped_in": [
+        7.245828702809516,
+        0.0,
+        5
+      ],
+      "seesaw_trained": [
+        6.941729186908473,
+        8.881784197001252e-16,
+        5
+      ],
+      "swap_cost_ppl": -0.0002886694839512316,
+      "trained_cost_ppl": -0.3043881853849939
+    },
+    "realistic": {
+      "relu": [
+        9.040431315397646,
+        0.3329140949211169,
+        5
+      ],
+      "seesaw_swapped_in": [
+        9.032558455678512,
+        0.33018163181020727,
+        5
+      ],
+      "seesaw_trained": [
+        7.856711354647726,
+        0.2036048557648365,
+        5
+      ],
+      "swap_cost_ppl": -0.007872859719133984,
+      "trained_cost_ppl": -1.1837199607499196
+    }
+  },
+  "realistic_main": {
+    "bulk": {
+      "ppl": 9.032558455678512,
+      "E_chem": 9.3409188744e-16,
+      "E_wallplug": 360000.0,
+      "E_amortised": 6.000000934091888e-09,
+      "E_landauer": 3.237315790814769e-17,
+      "ops_per_token": 11276.0,
+      "s_per_token_latency": 7200.0,
+      "s_per_token_amortised": 1.2e-10,
+      "n_strands": 6079.0,
+      "dual_rail_tax": 130.0,
+      "nats_per_J_amortised": 216058662.80269057
+    },
+    "localised": {
+      "ppl": 9.032558455678512,
+      "E_chem": 9.3409188744e-16,
+      "E_wallplug": 6000.0,
+      "E_amortised": 1.0000093409188745e-10,
+      "E_landauer": 3.237315790814769e-17,
+      "ops_per_token": 11276.0,
+      "s_per_token_latency": 120.0,
+      "s_per_token_amortised": 2e-12,
+      "n_strands": 6079.0,
+      "dual_rail_tax": 130.0,
+      "nats_per_J_amortised": 12963400696.273636
+    }
+  },
+  "gpu_same_model_J_per_token": 1.4914e-07,
+  "copies_sensitivity_E_amortised": {
+    "bulk": {
+      "1e+00": 6.000000934091888e-09,
+      "1e+02": 6.000000934091887e-07,
+      "1e+03": 6.000000934091887e-06,
+      "1e+04": 6.0000009340918875e-05,
+      "1e+06": 0.006000000934091887
+    },
+    "localised": {
+      "1e+00": 1.0000093409188745e-10,
+      "1e+02": 1.0000093409188744e-08,
+      "1e+03": 1.0000093409188744e-07,
+      "1e+04": 1.0000093409188744e-06,
+      "1e+06": 0.00010000093409188745
+    }
+  },
+  "fuel_depletion": {
+    "100.0": {
+      "tokens_until_+10pct_ppl": 0,
+      "ppl_last_window": 30.97196388244629,
+      "ppl_last_window_full_fuel": 8.661652565002441
+    },
+    "300.0": {
+      "tokens_until_+10pct_ppl": 0,
+      "ppl_last_window": 30.97191619873047,
+      "ppl_last_window_full_fuel": 8.661652565002441
+    },
+    "1000.0": {
+      "tokens_until_+10pct_ppl": 2000,
+      "ppl_last_window": 30.971832275390625,
+      "ppl_last_window_full_fuel": 8.661652565002441
+    },
+    "3000.0": {
+      "tokens_until_+10pct_ppl": 8000,
+      "ppl_last_window": 30.942092895507812,
+      "ppl_last_window_full_fuel": 8.661652565002441
+    },
+    "10000.0": {
+      "tokens_until_+10pct_ppl": 22000,
+      "ppl_last_window": 20.172330856323242,
+      "ppl_last_window_full_fuel": 8.661652565002441
+    },
+    "30000.0": {
+      "tokens_until_+10pct_ppl": ">60000",
+      "ppl_last_window": 8.913564682006836,
+      "ppl_last_window_full_fuel": 8.661652565002441
+    }
+  }
+}
